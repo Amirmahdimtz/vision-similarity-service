@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import importlib
-import pkgutil
+from pathlib import Path
 
 
 _BOOTSTRAPPED = False
 _EXCLUDED_PARTS = {
+    "__pycache__",
     "alembic",
     "di",
     "dtos",
@@ -19,17 +20,27 @@ _EXCLUDED_PARTS = {
 
 def _import_package_modules(package_name: str) -> None:
     package = importlib.import_module(package_name)
+    package_paths = list(getattr(package, "__path__", []))
 
-    package_path = getattr(package, "__path__", None)
-    if package_path is None:
-        return
+    for package_path in package_paths:
+        root = Path(package_path)
 
-    for module in pkgutil.walk_packages(package_path, prefix=f"{package_name}."):
-        module_parts = set(module.name.split("."))
-        if module_parts & _EXCLUDED_PARTS:
-            continue
+        for module_file in sorted(root.rglob("*.py")):
+            relative_path = module_file.relative_to(root)
 
-        importlib.import_module(module.name)
+            if set(relative_path.parts) & _EXCLUDED_PARTS:
+                continue
+
+            if module_file.name == "__init__.py":
+                module_parts = relative_path.parent.parts
+            else:
+                module_parts = relative_path.with_suffix("").parts
+
+            if not module_parts:
+                continue
+
+            module_name = ".".join((package_name, *module_parts))
+            importlib.import_module(module_name)
 
 
 def bootstrap_di() -> None:

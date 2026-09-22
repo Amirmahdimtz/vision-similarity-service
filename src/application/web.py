@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import importlib
 import inspect
-import pkgutil
+from pathlib import Path
 
 from fastapi import APIRouter, FastAPI
 
@@ -49,38 +49,39 @@ class WebService:
     @staticmethod
     def _discover_controllers() -> list[tuple[str, type]]:
         controllers: list[tuple[str, type]] = []
-        application_paths = getattr(application_package, "__path__", [])
 
-        for module in pkgutil.iter_modules(application_paths):
-            if not module.ispkg or module.name.startswith("_"):
-                continue
+        for application_path in getattr(application_package, "__path__", []):
+            root = Path(application_path)
 
-            feature_name = module.name
-            controller_module_name = (
-                f"src.application.{feature_name}.{feature_name}_controller"
-            )
-
-            try:
-                controller_module = importlib.import_module(controller_module_name)
-            except ModuleNotFoundError as exc:
-                if exc.name == controller_module_name:
+            for feature_dir in sorted(root.iterdir()):
+                if not feature_dir.is_dir() or feature_dir.name.startswith("_"):
                     continue
-                raise
 
-            controller_classes = [
-                obj
-                for _, obj in inspect.getmembers(controller_module, inspect.isclass)
-                if obj.__module__ == controller_module.__name__
-                and obj.__name__.endswith("Controller")
-                and hasattr(obj, "api")
-            ]
+                feature_name = feature_dir.name
+                controller_file = feature_dir / f"{feature_name}_controller.py"
 
-            if len(controller_classes) != 1:
-                raise RuntimeError(
-                    f"Expected exactly one controller in {controller_module_name}, "
-                    f"found {len(controller_classes)}."
+                if not controller_file.is_file():
+                    continue
+
+                controller_module_name = (
+                    f"src.application.{feature_name}.{feature_name}_controller"
                 )
+                controller_module = importlib.import_module(controller_module_name)
 
-            controllers.append((feature_name, controller_classes[0]))
+                controller_classes = [
+                    obj
+                    for _, obj in inspect.getmembers(controller_module, inspect.isclass)
+                    if obj.__module__ == controller_module.__name__
+                    and obj.__name__.endswith("Controller")
+                    and hasattr(obj, "api")
+                ]
+
+                if len(controller_classes) != 1:
+                    raise RuntimeError(
+                        f"Expected exactly one controller in "
+                        f"{controller_module_name}, found {len(controller_classes)}."
+                    )
+
+                controllers.append((feature_name, controller_classes[0]))
 
         return controllers
