@@ -49,15 +49,22 @@ class WebService:
     @staticmethod
     def _discover_controllers() -> list[tuple[str, type]]:
         controllers: list[tuple[str, type]] = []
+        discovered_features: set[str] = set()
 
-        for application_path in getattr(application_package, "__path__", []):
-            root = Path(application_path)
+        application_paths = {
+            Path(path).resolve()
+            for path in getattr(application_package, "__path__", [])
+        }
 
+        for root in sorted(application_paths, key=str):
             for feature_dir in sorted(root.iterdir()):
                 if not feature_dir.is_dir() or feature_dir.name.startswith("_"):
                     continue
 
                 feature_name = feature_dir.name
+                if feature_name in discovered_features:
+                    continue
+
                 controller_file = feature_dir / f"{feature_name}_controller.py"
 
                 if not controller_file.is_file():
@@ -83,5 +90,6 @@ class WebService:
                     )
 
                 controllers.append((feature_name, controller_classes[0]))
+                discovered_features.add(feature_name)
 
         return controllers
