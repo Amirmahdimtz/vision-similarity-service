@@ -1,0 +1,11 @@
+app:
+  name: "Vision Similarity Service"
+  version: "0.1.0"
+server:
+  host: "0.0.0.0"
+  port: 5000
+api:
+  prefix: "/api/v1"
+ml:
+  model_path: "yolo26n-cls.pt"
+  max_upload_size_mb: 10
