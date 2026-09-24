@@ -1,17 +1,17 @@
 # Vision Similarity Service
 
-سرویس مقایسه‌ی دو تصویر با استفاده از **Ultralytics YOLO26 Classification embeddings**، **L2 normalization** و **Cosine Similarity**.
+A lightweight, layered FastAPI service for comparing two images using Ultralytics YOLO26 Classification embeddings, L2 normalization, and Cosine Similarity.
 
-> **وضعیت پروژه:** MVP — نسخه‌ی 0.1.0-dev  
-> **مدل پیش‌فرض:** yolo26n-cls.pt  
-> **API:** FastAPI  
-> **خروجی:** similarity score در بازه‌ی -1 تا 1
+> Project status: MVP — version 0.1.0-dev  
+> Default model: yolo26n-cls.pt  
+> API framework: FastAPI  
+> Output: similarity score in the range [-1, 1]
 
 ---
 
-## مسئله چیست؟
+## Overview
 
-ورودی سرویس دو تصویر است و خروجی یک عدد است که نشان می‌دهد representationهای استخراج‌شده از دو تصویر توسط مدل چقدر به یکدیگر نزدیک‌اند.
+The service accepts two images and returns a numerical score representing how close their learned visual feature representations are.
 
 ~~~text
 Image 1 ──┐
@@ -19,7 +19,7 @@ Image 1 ──┐
 Image 2 ──┘
 ~~~
 
-نمونه‌ی خروجی:
+Example response:
 
 ~~~json
 {
@@ -27,31 +27,39 @@ Image 2 ──┘
 }
 ~~~
 
-این مقدار **احتمال نیست**. یعنی نباید آن را «92.43 درصد احتمال مشابه بودن تصاویر» تفسیر کرد.
+This value is not a probability.
 
-تعبیر دقیق‌تر این است:
+It should not be interpreted as:
 
-> Cosine similarity بین دو embedding استخراج‌شده از تصاویر برابر 0.924308 است.
+~~~text
+The images are 92.43% likely to be similar.
+~~~
+
+A more accurate interpretation is:
+
+~~~text
+The cosine similarity between the two extracted image embeddings is 0.924308.
+~~~
 
 ---
 
-## مدل مورد استفاده: YOLO26n-cls
+## Model Used: YOLO26n-cls
 
-مدل فعلی پروژه:
+The default model used by this project is:
 
 ~~~text
 yolo26n-cls.pt
 ~~~
 
-است.
+This is the Nano variant of the YOLO26 Classification family provided by Ultralytics.
 
-این مدل نسخه‌ی **Nano** از خانواده‌ی **YOLO26 Classification** در Ultralytics است. پسوند <code>-cls</code> مشخص می‌کند که مدل برای **Image Classification** ساخته شده است، نه Object Detection.
+The -cls suffix indicates that the model is designed for Image Classification rather than Object Detection.
 
-طبق مستندات رسمی Ultralytics، مدل‌های YOLO26 Classification به‌صورت pretrained روی **ImageNet** ارائه می‌شوند.
+According to the official Ultralytics documentation, YOLO26 classification models are pretrained on ImageNet.
 
-### مشخصات رسمی مدل
+### Official YOLO26n-cls Characteristics
 
-| مشخصه | YOLO26n-cls |
+| Property | YOLO26n-cls |
 |---|---:|
 | Task | Image Classification |
 | Scale | Nano |
@@ -62,17 +70,20 @@ yolo26n-cls.pt
 | Parameters | ~2.8M |
 | FLOPs | ~0.4B |
 
-این اعداد benchmark رسمی Ultralytics روی ImageNet هستند و latency واقعی این API را نشان نمی‌دهند. سرعت سرویس به CPU/GPU، PyTorch، سیستم‌عامل و deployment بستگی دارد.
+These values are Ultralytics classification benchmark figures on ImageNet. They are not API latency measurements for this project. Runtime performance depends on CPU/GPU, PyTorch, operating system, worker configuration, and deployment strategy.
 
-منبع: [Ultralytics Classification Documentation](https://docs.ultralytics.com/tasks/classify/)
+Official documentation:
+
+- [Ultralytics Image Classification](https://docs.ultralytics.com/tasks/classify/)
+- [Ultralytics YOLO26](https://docs.ultralytics.com/models/yolo26/)
 
 ---
 
-## چرا Classification و نه Detection؟
+## Why Classification Instead of Detection?
 
-YOLO بیشتر با Object Detection شناخته می‌شود، اما خانواده‌ی YOLO26 چند task مختلف از جمله Classification را پشتیبانی می‌کند.
+YOLO is widely known for Object Detection, but the YOLO26 family supports multiple computer vision tasks, including classification.
 
-اگر از مدل Detection استفاده می‌کردیم، هدف اصلی مدل چیزی شبیه این بود:
+If this project used a Detection model, its primary output would conceptually look like this:
 
 ~~~text
 person -> bounding box
@@ -80,14 +91,18 @@ car    -> bounding box
 dog    -> bounding box
 ~~~
 
-اما مسئله‌ی این پروژه این است:
+That is not the problem this service is solving.
+
+The goal is:
 
 ~~~text
-کل تصویر از نظر featureهایی که مدل یاد گرفته،
-چقدر به تصویر دوم نزدیک است؟
+How close are these two entire images
+in the feature space learned by the model?
 ~~~
 
-بنابراین به یک representation از **کل تصویر** نیاز داریم. به همین دلیل از مدل Classification استفاده می‌کنیم و به‌جای class prediction نهایی، feature embedding آن را استخراج می‌کنیم.
+For this reason, the project uses a Classification model and extracts an internal feature representation instead of comparing final predicted classes.
+
+Conceptually:
 
 ~~~text
 Image
@@ -102,17 +117,19 @@ Learned Visual Features
 Embedding Vector
 ~~~
 
-در این پروژه YOLO عملاً نقش **feature extractor** را دارد.
+In this service, YOLO is used primarily as a feature extractor.
 
 ---
 
-## Embedding چیست؟
+## What Is an Embedding?
 
-تصویر خام مجموعه‌ی بزرگی از pixelها است. مقایسه‌ی مستقیم pixelها برای similarity مناسب نیست؛ چون تغییر نور، زاویه، crop، background یا scale می‌تواند مقدار pixelها را کاملاً تغییر دهد.
+A raw image contains a large number of pixel values.
 
-یک Neural Network در لایه‌های مختلف featureهای تصویر را استخراج می‌کند؛ از الگوهای ساده‌تر تا representationهای سطح بالاتر.
+Direct pixel-by-pixel comparison is usually not useful for visual similarity because changes in lighting, crop, scale, background, or camera angle can produce large pixel differences even when images contain related visual content.
 
-در نهایت می‌توان تصویر را با یک بردار عددی نمایش داد:
+A neural network progressively transforms the input image into higher-level learned features.
+
+The resulting representation can be expressed as a numerical vector:
 
 ~~~text
 Image A
@@ -121,9 +138,9 @@ Image A
 [0.13, -0.44, 0.71, ..., 0.09]
 ~~~
 
-این بردار یک **Embedding** است.
+This vector is called an embedding.
 
-برای تصویر دوم:
+A second image produces another vector:
 
 ~~~text
 Image B
@@ -132,13 +149,15 @@ Image B
 [0.11, -0.39, 0.68, ..., 0.12]
 ~~~
 
-اگر دو تصویر از دید featureهایی که مدل یاد گرفته است نزدیک باشند، embeddingهای آن‌ها نیز در فضای برداری نزدیک‌تر خواهند بود.
+If the model extracts similar learned features from both images, their embedding vectors should point in similar directions in the embedding space.
+
+That is what this project measures.
 
 ---
 
-## Ultralytics چگونه Embedding را استخراج می‌کند؟
+## How Ultralytics Extracts the Embedding
 
-در پروژه از API رسمی زیر استفاده می‌شود:
+The project uses the official Ultralytics embedding API:
 
 ~~~python
 results = self._model.embed(
@@ -147,57 +166,73 @@ results = self._model.embed(
 )
 ~~~
 
-طبق مستندات رسمی Ultralytics، <code>model.embed()</code> یک wrapper روی prediction pipeline است و به‌صورت پیش‌فرض feature embedding را از **second-to-last model layer** استخراج می‌کند.
+According to the Ultralytics API documentation, model.embed() wraps the prediction pipeline and returns feature embeddings.
 
-در صورت نیاز Ultralytics اجازه می‌دهد layer مشخصی برای embedding انتخاب شود، اما MVP فعلی از رفتار پیش‌فرض استفاده می‌کند.
+By default, embeddings are extracted from the second-to-last model layer.
 
-منبع: [Ultralytics Model.embed API](https://docs.ultralytics.com/reference/engine/model/#ultralytics.engine.model.Model.embed)
+Ultralytics also supports explicitly selecting embedding layers, but this MVP intentionally uses the default behavior.
+
+Official reference:
+
+- [Ultralytics Model.embed API](https://docs.ultralytics.com/reference/engine/model/#ultralytics.engine.model.Model.embed)
 
 ---
 
-## Pipeline دقیق مدل در این پروژه
+# How the Model Is Used in This Project
 
-پیاده‌سازی ML در فایل زیر قرار دارد:
+The ML integration is implemented in:
 
 ~~~text
 src/infrastructure/ml/yolo_embedding_provider.py
 ~~~
 
-### 1. Load مدل
+The processing pipeline has five main steps.
+
+## 1. Load the Model
 
 ~~~python
 self._model = YOLO(self._model_path)
 ~~~
 
-نام model از configuration خوانده می‌شود:
+The model path comes from configuration:
 
 ~~~yaml
 ml:
   model_path: "yolo26n-cls.pt"
 ~~~
 
-در اولین اجرا، اگر weight روی سیستم موجود نباشد، Ultralytics آن را download می‌کند.
+On the first run, Ultralytics may automatically download the model weights if they are not available locally.
 
-### 2. بررسی واقعی بودن تصویر
+---
 
-فقط به filename یا Content-Type اعتماد نمی‌کنیم. bytes تصویر با Pillow بررسی می‌شود:
+## 2. Validate the Image
+
+The service does not rely only on the file extension or HTTP MIME type.
+
+The uploaded bytes are verified with Pillow:
 
 ~~~python
 with Image.open(BytesIO(image_bytes)) as image:
     image.verify()
 ~~~
 
-اگر فایل واقعاً image معتبر نباشد، <code>InvalidImageError</code> ایجاد می‌شود.
+If the file is not a valid image, the provider raises InvalidImageError.
 
-### 3. تبدیل به RGB
+This prevents a renamed non-image file from being processed as a valid image.
+
+---
+
+## 3. Convert the Image to RGB
 
 ~~~python
 rgb_image = image.convert("RGB")
 ~~~
 
-با این کار ورودی‌هایی مثل Grayscale یا RGBA قبل از inference به format یکسان تبدیل می‌شوند.
+This produces a consistent input format for images that may originally be grayscale, RGBA, palette-based, or stored in another Pillow-supported mode.
 
-### 4. استخراج Feature Embedding
+---
+
+## 4. Extract the Feature Embedding
 
 ~~~python
 results = self._model.embed(
@@ -206,53 +241,63 @@ results = self._model.embed(
 )
 ~~~
 
-سپس خروجی به یک Tensor یک‌بعدی روی CPU تبدیل می‌شود:
+The output is then converted into a flat CPU tensor:
 
 ~~~python
 embedding = embedding.detach().float().cpu().flatten()
 ~~~
 
-dimension بردار در کد hard-code نشده است؛ بنابراین Service به یک embedding size ثابت وابسته نیست.
+The embedding dimension is intentionally not hard-coded.
 
-### 5. L2 Normalization
+This keeps the service independent from the exact embedding size produced by a compatible model configuration.
+
+---
+
+## 5. L2-Normalize the Embedding
 
 ~~~python
 normalized = F.normalize(embedding, dim=0)
 ~~~
 
-اگر embedding را x در نظر بگیریم:
+For an embedding vector x:
 
 ~~~text
 x_normalized = x / ||x||₂
 ~~~
 
-پس طول بردار normalize‌شده تقریباً 1 می‌شود.
+After L2 normalization:
+
+~~~text
+||x_normalized||₂ ≈ 1
+~~~
+
+This simplifies cosine similarity.
 
 ---
 
-## Cosine Similarity چگونه محاسبه می‌شود؟
+# Cosine Similarity
 
-فرمول اصلی:
+For two vectors A and B:
 
 ~~~text
 cosine_similarity(A, B) =
     (A · B) / (||A||₂ × ||B||₂)
 ~~~
 
-اما در این پروژه هر دو embedding از قبل L2-normalized هستند:
+Because both embeddings are already L2-normalized:
 
 ~~~text
 ||A||₂ = 1
 ||B||₂ = 1
 ~~~
 
-پس فرمول به این تبدیل می‌شود:
+the equation becomes:
 
 ~~~text
 cosine_similarity(A, B) = A · B
 ~~~
 
-به همین دلیل Service dot product را محاسبه می‌کند:
+The service therefore computes a dot product:
 
 ~~~python
 dot_product = math.fsum(
@@ -265,29 +310,35 @@ dot_product = math.fsum(
 )
 ~~~
 
-و در انتها برای جلوگیری از floating-point overshoot مقدار clamp می‌شود:
+The final value is clamped to the mathematically valid range to protect against tiny floating-point overshoots:
 
 ~~~python
 return max(-1.0, min(1.0, dot_product))
 ~~~
 
-### معنی ریاضی Score
+The API contract therefore remains:
 
-| Score | مفهوم هندسی |
+~~~text
+-1.0 <= similarity <= 1.0
+~~~
+
+## Mathematical Interpretation
+
+| Score | Geometric meaning |
 |---:|---|
-| 1 | دو بردار در یک جهت |
-| 0 | دو بردار orthogonal |
-| -1 | دو بردار در جهت مخالف |
+| 1 | Vectors point in the same direction |
+| 0 | Vectors are orthogonal |
+| -1 | Vectors point in opposite directions |
 
-این جدول فقط معنی ریاضی Cosine Similarity است و **threshold پروژه** نیست.
+This table describes cosine similarity mathematically. It does not define an application-level similarity threshold.
 
 ---
 
-## آیا 0.92 یعنی تصاویر Similar هستند؟
+# Does a Score of 0.92 Mean the Images Are Similar?
 
-نه لزوماً.
+Not necessarily.
 
-مثلاً این خروجی:
+For example:
 
 ~~~json
 {
@@ -295,33 +346,35 @@ return max(-1.0, min(1.0, dot_product))
 }
 ~~~
 
-نشان می‌دهد embeddingهای دو تصویر در فضای feature مدل به هم نزدیک هستند.
+means that the two embeddings are close in the learned feature space.
 
-اما نمی‌توان بدون evaluation گفت:
+It does not yet justify a rule such as:
 
 ~~~text
 similarity >= 0.80 => similar
 ~~~
 
-Threshold باید با یک dataset واقعی از pairهای برچسب‌خورده تعیین شود:
+A threshold should be calibrated using a labeled dataset of real image pairs.
+
+A proper evaluation flow would be:
 
 ~~~text
 Labeled Image Pairs
         │
         ▼
-Calculate Similarities
+Calculate Similarity Scores
         │
         ▼
-Positive / Negative Score Distributions
+Analyze Positive / Negative Distributions
         │
         ▼
-Choose Threshold
+Choose a Threshold
         │
         ▼
-Precision / Recall / F1 / ROC Evaluation
+Evaluate Precision / Recall / F1 / ROC
 ~~~
 
-بعد از calibration می‌توان پاسخ API را توسعه داد:
+Only after calibration should the API return a binary decision such as:
 
 ~~~json
 {
@@ -333,46 +386,58 @@ Precision / Recall / F1 / ROC Evaluation
 
 ---
 
-## آیا این واقعاً Semantic Similarity است؟
+# Is This True Semantic Similarity?
 
-در توضیح علمی پروژه باید این بخش دقیق بیان شود.
+This distinction is important.
 
-<code>yolo26n-cls</code> یک classifier pretrained روی ImageNet است. این مدل به‌طور اختصاصی برای generic human-level semantic similarity یا image-text alignment train نشده است.
+yolo26n-cls is a classifier pretrained on ImageNet. It was not specifically trained as a generic human-level semantic similarity model or as an image-text alignment model.
 
-بنابراین خروجی فعلی دقیق‌تر است که این‌طور تعریف شود:
+Therefore, the current output is more precisely described as:
 
-> **Similarity between learned visual feature embeddings extracted by YOLO26n-cls.**
+> Similarity between learned visual feature embeddings extracted by YOLO26n-cls.
 
-یعنی مدل similarity را در فضای visual featureهایی اندازه می‌گیرد که هنگام classification یاد گرفته است.
+The model compares images in the visual feature space learned during classification training.
 
-برای semantic similarity قوی‌تر، در مراحل بعد می‌توان YOLO embedding را با مدل‌های embedding-oriented مانند **CLIP** روی dataset واقعی پروژه benchmark کرد.
+For stronger semantic-similarity use cases, this project can later benchmark YOLO embeddings against embedding-oriented models such as CLIP.
 
 ---
 
-## جریان کامل Request
+# End-to-End Processing Flow
 
 ~~~mermaid
 flowchart TD
     A[Image 1] --> C[ImageSimilarityController]
     B[Image 2] --> C
+
     C --> D[HTTP Validation]
     D --> E[ImageSimilarityService]
-    E --> F[YoloEmbeddingProvider]
-    F --> G[Validate Image]
-    G --> H[Convert RGB]
-    H --> I[YOLO26n-cls model.embed]
-    I --> J[L2 Normalize]
-    J --> K[Cosine Similarity]
-    K --> L[JSON Response]
-~~~
 
-برای هر دو تصویر embedding ساخته می‌شود و سپس Service آن‌ها را مقایسه می‌کند.
+    E --> F[YoloEmbeddingProvider]
+    E --> G[YoloEmbeddingProvider]
+
+    F --> H[Verify Image 1]
+    G --> I[Verify Image 2]
+
+    H --> J[Convert to RGB]
+    I --> K[Convert to RGB]
+
+    J --> L[YOLO26n-cls model.embed]
+    K --> M[YOLO26n-cls model.embed]
+
+    L --> N[L2 Normalize Embedding 1]
+    M --> O[L2 Normalize Embedding 2]
+
+    N --> P[Cosine Similarity]
+    O --> P
+
+    P --> Q[JSON Response]
+~~~
 
 ---
 
-# معماری پروژه
+# Architecture
 
-معماری سرویس:
+The service follows a lightweight layered architecture:
 
 ~~~text
 Host
@@ -384,7 +449,7 @@ Core
 Infrastructure
 ~~~
 
-Dependency flow اصلی:
+The main dependency flow is:
 
 ~~~mermaid
 flowchart TD
@@ -394,62 +459,68 @@ flowchart TD
     Provider --> Model[Ultralytics YOLO26n-cls]
 ~~~
 
-### Application Layer
+## Application Layer
 
-مسیر:
+Location:
 
 ~~~text
 src/application/image_similarity/
 ~~~
 
-مسئول:
+Responsibilities:
 
 - HTTP routing
 - UploadFile handling
-- HTTP validation
-- Status codes
-- HTTPException
-- Response DTO
+- request validation
+- HTTP status codes
+- HTTPException mapping
+- response DTO mapping
 
-Controller مدل YOLO نمی‌سازد و similarity calculation را انجام نمی‌دهد.
+The Controller does not load the YOLO model and does not calculate cosine similarity.
 
-### Core Layer
+## Core Layer
 
-مسیر:
+Location:
 
 ~~~text
 src/core/services/image_similarity/
 ~~~
 
-مسئول workflow:
+Responsibilities:
 
-- استخراج embedding تصویر اول
-- استخراج embedding تصویر دوم
-- بررسی برابر بودن dimension
-- محاسبه‌ی similarity
-- برگرداندن score
+- orchestrating embedding extraction
+- validating equal embedding dimensions
+- calculating similarity
+- returning the final score
 
-### Infrastructure Layer
+The Core layer does not own FastAPI-specific HTTP behavior.
 
-مسیر:
+## Infrastructure Layer
+
+Location:
 
 ~~~text
 src/infrastructure/ml/
 ~~~
 
-مسئول:
+Responsibilities:
 
-- Ultralytics
+- Ultralytics integration
 - YOLO model loading
-- Pillow image validation
-- Tensor processing
-- Embedding normalization
+- Pillow image verification
+- RGB conversion
+- tensor conversion
+- embedding normalization
+
+This separation keeps HTTP concerns away from ML implementation details.
 
 ---
 
-## Constructor Dependency Injection
+# Constructor Dependency Injection
 
-Dependencyها توسط constructor دریافت می‌شوند:
+Dependencies are supplied through constructors.
+
+Example:
 
 ~~~python
 @inject
@@ -461,15 +532,29 @@ class ImageSimilarityService:
         self._embedding_provider = embedding_provider
 ~~~
 
-Service خودش dependency را ایجاد نمی‌کند.
+The service does not directly construct its dependency.
 
-این design باعث کاهش coupling و ساده‌تر شدن testing می‌شود.
+This reduces coupling and makes unit testing easier.
 
 ---
 
-## Model Lifetime و Singleton
+# Model Lifetime and Singleton Behavior
 
-Load کردن مدل ML برای هر request پرهزینه است. به همین دلیل <code>YoloEmbeddingProvider</code> Singleton است:
+Loading an ML model for every HTTP request would be inefficient.
+
+A poor lifecycle would be:
+
+~~~text
+Request
+   ↓
+Load Model
+   ↓
+Inference
+   ↓
+Destroy Model
+~~~
+
+Instead, the YOLO provider is registered as a singleton:
 
 ~~~python
 @inject
@@ -477,22 +562,58 @@ class YoloEmbeddingProvider:
     __di_singleton__ = True
 ~~~
 
-در نتیجه در هر process مدل یک‌بار ساخته می‌شود و requestهای بعدی همان instance را استفاده می‌کنند.
+One model instance is therefore reused inside each application process.
 
-### Thread Safety
+Conceptually:
 
-دسترسی به model shared با Lock محافظت شده است:
+~~~text
+Application Process
+       │
+       ▼
+Load YOLO Once
+       │
+       ▼
+Shared Model Instance
+   ┌────┼────┐
+   ▼    ▼    ▼
+ Req1  Req2  Req3
+~~~
+
+This reduces repeated model-loading cost and memory churn.
+
+---
+
+# Thread Safety
+
+Because the model instance is shared, the MVP uses a conservative lock:
 
 ~~~python
 with self._inference_lock:
     results = self._model.embed(...)
 ~~~
 
-در MVP این تصمیم محافظه‌کارانه است تا چند thread همزمان وارد یک model instance نشوند.
+This prevents multiple threads from entering the same model instance simultaneously.
 
-### FastAPI Event Loop
+The current design prioritizes correctness and predictable behavior over maximum throughput.
 
-Inference مدل synchronous است. برای اینکه مستقیماً event loop وب‌سرور را block نکند، Service از <code>asyncio.to_thread()</code> استفاده می‌کند.
+For a higher-throughput production deployment, concurrency should be benchmarked and may require strategies such as:
+
+- multiple worker processes
+- model replication
+- dedicated GPU inference workers
+- request queues
+- batching
+- GPU-aware scheduling
+
+---
+
+# FastAPI and Blocking Inference
+
+YOLO inference is synchronous.
+
+Running it directly on the FastAPI event-loop thread would block the event loop while inference executes.
+
+The service therefore uses asyncio.to_thread():
 
 ~~~python
 embedding1, embedding2 = await asyncio.gather(
@@ -501,11 +622,13 @@ embedding1, embedding2 = await asyncio.gather(
 )
 ~~~
 
-به دلیل Lock، inferenceهای model shared فعلاً عملاً serialize می‌شوند. برای throughput بالاتر باید worker strategy، GPU scheduling یا model replication جداگانه benchmark شود.
+This prevents synchronous inference work from running directly on the event-loop thread.
+
+Because the shared model provider currently uses a lock, model inference is effectively serialized in this MVP.
 
 ---
 
-# ساختار Repository
+# Project Structure
 
 ~~~text
 vision-similarity-service/
@@ -515,16 +638,19 @@ vision-similarity-service/
 │   │   └── res/
 │   │       ├── appsettings.yaml
 │   │       └── appsettings.development.yaml
+│   │
 │   ├── application/
 │   │   ├── web.py
 │   │   └── image_similarity/
 │   │       ├── image_similarity_controller.py
 │   │       └── dtos/
 │   │           └── image_similarity_dto.py
+│   │
 │   ├── core/
 │   │   └── services/
 │   │       └── image_similarity/
 │   │           └── image_similarity_service.py
+│   │
 │   └── infrastructure/
 │       ├── di/
 │       │   ├── bootstrap.py
@@ -533,6 +659,7 @@ vision-similarity-service/
 │       │   └── yolo_embedding_provider.py
 │       └── utils/
 │           └── config_reader.py
+│
 ├── tests/
 │   ├── test_image_similarity_service.py
 │   └── test_web_discovery.py
@@ -542,27 +669,27 @@ vision-similarity-service/
 └── README.md
 ~~~
 
-در MVP دیتابیس و Repository نداریم، چون این use-case هیچ داده‌ای را persist نمی‌کند.
+There is no Database or Repository layer in the MVP because this use case does not persist data.
 
 ---
 
 # API
 
-## Compare two images
+## Compare Two Images
 
 ~~~http
 POST /api/v1/image_similarity/
 Content-Type: multipart/form-data
 ~~~
 
-دو field لازم است:
+Required fields:
 
 | Field | Type | Required |
 |---|---|---|
 | image1 | Image file | Yes |
 | image2 | Image file | Yes |
 
-نمونه:
+Example:
 
 ~~~bash
 curl -X POST "http://localhost:5000/api/v1/image_similarity/" \
@@ -570,7 +697,7 @@ curl -X POST "http://localhost:5000/api/v1/image_similarity/" \
   -F "image2=@image2.jpg"
 ~~~
 
-Response:
+Example response:
 
 ~~~json
 {
@@ -584,19 +711,21 @@ Response:
 GET /health
 ~~~
 
+Response:
+
 ~~~json
 {
   "status": "ok"
 }
 ~~~
 
-## Swagger
+## Swagger UI
 
 ~~~text
 http://localhost:5000/docs
 ~~~
 
-OpenAPI:
+OpenAPI schema:
 
 ~~~text
 http://localhost:5000/openapi.json
@@ -604,51 +733,63 @@ http://localhost:5000/openapi.json
 
 ---
 
-# Validation و Error Handling
+# Validation and Error Handling
 
-### MIME Type
+The service performs validation at multiple levels.
 
-ورودی باید Content-Type تصویری داشته باشد:
+## MIME Type
+
+The upload must have an image MIME type:
 
 ~~~text
 image/*
 ~~~
 
-در غیر این صورت:
+Otherwise:
 
 ~~~text
 415 Unsupported Media Type
 ~~~
 
-### Empty File
+## Empty File
 
-فایل خالی:
+An empty upload returns:
 
 ~~~text
 422 Unprocessable Entity
 ~~~
 
-### Maximum Size
+## Maximum Upload Size
 
-محدودیت پیش‌فرض هر تصویر:
+The default limit per image is:
 
 ~~~text
 10 MB
 ~~~
 
-فایل بزرگ‌تر:
+A larger image returns:
 
 ~~~text
 413 Request Entity Too Large
 ~~~
 
-### Image Verification
+## Real Image Verification
 
-بعد از HTTP validation، خود bytes توسط Pillow verify می‌شوند. بنابراین صرفاً تغییر extension یک فایل غیرتصویری به jpg برای عبور از validation کافی نیست.
+After HTTP validation, the actual bytes are verified with Pillow.
+
+Renaming a non-image file to .jpg is therefore not enough to pass validation.
 
 ---
 
 # Configuration
+
+Development configuration:
+
+~~~text
+src/host/res/appsettings.development.yaml
+~~~
+
+Current values:
 
 ~~~yaml
 app:
@@ -667,44 +808,71 @@ ml:
   max_upload_size_mb: 10
 ~~~
 
-برای آزمایش model scale دیگر:
+A different compatible classification model can be configured, for example:
 
 ~~~yaml
 ml:
   model_path: "yolo26s-cls.pt"
 ~~~
 
-تغییر مدل باید همراه benchmark accuracy، latency و memory انجام شود.
+Changing model scale introduces trade-offs in latency, memory usage, and model quality, so it should be benchmarked.
 
 ---
 
-# نصب و اجرا
+# Installation and Local Development
+
+## Requirements
+
+Recommended development setup:
+
+- Python 3.12
+- pip
+- Git
+- Internet access for the first model download
 
 ## Windows PowerShell
+
+Clone:
 
 ~~~powershell
 git clone https://github.com/Amirmahdimtz/vision-similarity-service.git
 cd vision-similarity-service
+~~~
 
+Create a virtual environment:
+
+~~~powershell
 py -3.12 -m venv .venv
 ~~~
 
-اگر اجرای activation script توسط PowerShell بسته است:
+If PowerShell blocks activation scripts:
 
 ~~~powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 ~~~
 
-سپس:
+Activate:
 
 ~~~powershell
 .\.venv\Scripts\Activate.ps1
+~~~
 
+Install dependencies:
+
+~~~powershell
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
+~~~
 
+Run tests:
+
+~~~powershell
 python -m pytest
+~~~
 
+Start the API:
+
+~~~powershell
 python -m uvicorn src.host.app:app --host 0.0.0.0 --port 5000 --reload
 ~~~
 
@@ -724,119 +892,158 @@ python -m pytest
 python -m uvicorn src.host.app:app --host 0.0.0.0 --port 5000 --reload
 ~~~
 
-در اولین استفاده از مدل ممکن است weight مدل توسط Ultralytics دانلود شود.
+On the first inference run, Ultralytics may download the configured model weights.
 
 ---
 
-# Tests
+# Testing
 
-اجرای تست‌ها:
+Run:
 
-~~~powershell
+~~~bash
 python -m pytest
 ~~~
 
-تست‌های Service با fake embedding provider اجرا می‌شوند و برای unit test نیازی به load کردن YOLO واقعی ندارند.
+The current unit tests use a fake embedding provider, so they do not need to load the real YOLO model.
 
-سناریوهای فعلی:
+Current scenarios include:
+
+### Identical Embeddings
 
 ~~~text
-Identical embeddings:
 A = [1, 0, 0]
 B = [1, 0, 0]
+
 Similarity = 1
 ~~~
 
+### Orthogonal Embeddings
+
 ~~~text
-Orthogonal embeddings:
 A = [1, 0]
 B = [0, 1]
+
 Similarity = 0
 ~~~
 
-همچنین mismatch شدن dimension بردارها و duplicate controller discovery تست می‌شود.
+### Invalid Embedding Dimensions
+
+If the vectors have different dimensions, the Service raises an error.
+
+### Controller Discovery Regression
+
+The tests also verify that duplicate namespace paths do not register the same Controller twice.
 
 ---
 
-# محدودیت‌های MVP
+# Current MVP Limitations
 
-نسخه‌ی فعلی عمداً محدود است:
+Version 0.1.0-dev is intentionally limited in scope.
 
-- threshold کالیبره‌شده ندارد
-- is_similar برنمی‌گرداند
-- evaluation dataset اختصاصی ندارد
-- YOLO در برابر CLIP benchmark نشده است
-- batch similarity ندارد
-- embedding cache ندارد
-- GPU-specific optimization ندارد
-- load/performance test ندارد
-- production metrics و observability ندارد
-- persistence/database ندارد
+Current limitations:
 
-این موارد bug نیستند؛ خارج از scope نسخه‌ی MVP هستند.
+- no calibrated similarity threshold
+- no is_similar decision
+- no project-specific evaluation dataset
+- no YOLO-vs-CLIP benchmark
+- no batch similarity endpoint
+- no embedding cache
+- no GPU-specific optimization
+- no load/performance testing
+- no production metrics or observability
+- no persistence/database
+
+These are not bugs. They are intentionally outside the current MVP scope.
 
 ---
 
 # Roadmap
 
-### Phase 1 — MVP ✅
+## Phase 1 — MVP ✅
 
-- [x] FastAPI API
+- [x] FastAPI service
 - [x] Two-image upload
-- [x] YOLO26n-cls embeddings
+- [x] YOLO26n-cls embedding extraction
 - [x] L2 normalization
 - [x] Cosine similarity
 - [x] Image validation
 - [x] Constructor Dependency Injection
 - [x] Singleton model provider
 - [x] Unit tests
-- [x] Swagger/OpenAPI
+- [x] Swagger / OpenAPI
 
-### Phase 2 — Evaluation
+## Phase 2 — Evaluation
 
-- [ ] ساخت labeled image-pair dataset
-- [ ] محاسبه‌ی score distribution
-- [ ] انتخاب threshold
-- [ ] Precision / Recall / F1 evaluation
-- [ ] اضافه کردن is_similar
+- [ ] Build a labeled image-pair dataset
+- [ ] Measure similarity-score distributions
+- [ ] Select a threshold
+- [ ] Evaluate Precision / Recall / F1 / ROC
+- [ ] Add is_similar
 
-### Phase 3 — Model Benchmark
+## Phase 3 — Model Benchmarking
 
 - [ ] Benchmark YOLO26n-cls
-- [ ] Benchmark مدل‌های بزرگ‌تر YOLO26-cls
+- [ ] Benchmark larger YOLO26 classification variants
 - [ ] Benchmark CLIP
-- [ ] مقایسه‌ی accuracy / latency / memory
+- [ ] Compare quality / latency / memory
 
-### Phase 4 — Production Hardening
+## Phase 4 — Production Hardening
 
 - [ ] Integration tests
 - [ ] Structured logging
 - [ ] Metrics
 - [ ] Load testing
 - [ ] Deployment optimization
-- [ ] GPU strategy در صورت نیاز
-- [ ] Batch endpoint در صورت نیاز
+- [ ] GPU strategy if required
+- [ ] Batch endpoint if required
 
 ---
 
 # Technology Stack
 
-| Technology | Usage |
+| Technology | Purpose |
 |---|---|
 | Python | Core language |
 | FastAPI | HTTP API |
 | Uvicorn | ASGI server |
-| Ultralytics | YOLO26 API |
+| Ultralytics | YOLO26 model API |
 | PyTorch | Tensor operations and normalization |
 | Pillow | Image validation and RGB conversion |
-| Pydantic | API DTO validation |
+| Pydantic | API response validation |
 | PyYAML | Configuration |
 | pytest | Testing |
 | pytest-asyncio | Async tests |
 
 ---
 
-# منابع فنی
+# Why This MVP Architecture?
+
+The project intentionally avoids unnecessary complexity.
+
+The current dependency chain is:
+
+~~~text
+Controller
+   ↓
+Service
+   ↓
+YOLO Provider
+~~~
+
+There is no database, repository, extra domain layer, CQRS layer, or unnecessary interface because the current use case does not require them.
+
+At the same time, the major boundaries are preserved:
+
+- HTTP logic stays in the Application layer
+- workflow logic stays in the Core layer
+- model-specific code stays in Infrastructure
+- dependencies are provided through constructor injection
+
+This keeps the implementation small, testable, and extensible.
+
+---
+
+# Technical References
 
 - [Ultralytics YOLO26 Documentation](https://docs.ultralytics.com/models/yolo26/)
 - [Ultralytics Image Classification](https://docs.ultralytics.com/tasks/classify/)
@@ -846,18 +1053,18 @@ Similarity = 0
 
 ---
 
-## License Notice
+# License Notice
 
-این repository در حال حاضر License مستقل تعریف نکرده است.
+This repository currently does not define a separate project license.
 
-Ultralytics شرایط مجوز خودش را دارد. قبل از استفاده‌ی production یا commercial، شرایط فعلی آن را بررسی کنید:
+Ultralytics has its own licensing terms. Before production or commercial use, review the current Ultralytics license conditions:
 
 - [Ultralytics Licensing](https://www.ultralytics.com/license)
 - [Ultralytics GitHub](https://github.com/ultralytics/ultralytics)
 
 ---
 
-## Current Version
+# Current Version
 
 ~~~text
 0.1.0-dev
